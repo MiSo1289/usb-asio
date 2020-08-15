@@ -1,0 +1,46 @@
+﻿---
+BasedOnStyle: WebKit
+AccessModifierOffset: '-2'
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: 'false'
+AlignConsecutiveDeclarations: 'false'
+AlignOperands: 'true'
+AlignTrailingComments: 'true'
+AllowShortBlocksOnASingleLine: 'true'
+AllowShortFunctionsOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: 'true'
+AllowShortLoopsOnASingleLine: 'false'
+AlwaysBreakTemplateDeclarations: 'Yes'
+BreakBeforeBraces: Allman
+BreakConstructorInitializersBeforeComma: 'true'
+ConstructorInitializerAllOnOneLineOrOnePerLine: 'true'
+ConstructorInitializerIndentWidth: '2'
+ContinuationIndentWidth: '4'
+ColumnLimit: 0
+Cpp11BracedListStyle: 'true'
+DerivePointerAlignment: 'false'
+FixNamespaceComments: 'true'
+KeepEmptyLinesAtTheStartOfBlocks: 'false'
+Language: Cpp
+MaxEmptyLinesToKeep: '1'
+NamespaceIndentation: All
+PointerAlignment: Left
+SortIncludes: 'true'
+IncludeCategories:
+  - Regex:           '^<.*>$'
+    Priority:        1
+  - Regex:           '^".*"$'
+    Priority:        2
+SpaceAfterCStyleCast: 'false'
+SpaceBeforeAssignmentOperators: 'true'
+SpaceBeforeParens: ControlStatements
+SpaceInEmptyParentheses: 'false'
+SpacesBeforeTrailingComments: '2'
+SpacesInAngles: 'false'
+SpaceBeforeCpp11BracedList: false
+UseTab: Never
+BinPackArguments: 'false'
+BinPackParameters: 'false'
+ExperimentalAutoDetectBinPacking: 'false'
+AllowAllParametersOfDeclarationOnNextLine: 'false'
+...
