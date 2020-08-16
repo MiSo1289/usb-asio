@@ -13,24 +13,33 @@ namespace usb_asio
     class usb_dma_resource final : public std::pmr::memory_resource
     {
       public:
-        explicit usb_dma_resource(usb_device& device)
-            : usb_dma_resource{device, std::pmr::new_delete_resource()} { }
+        using device_handle_type = ::libusb_device_handle*;
 
+        template <typename Executor>
+        explicit usb_dma_resource(basic_usb_device<Executor>& device)
+            : usb_dma_resource{device, std::pmr::get_default_resource()} { }
+
+        template <typename Executor>
         usb_dma_resource(
-            usb_device& device,
+            basic_usb_device<Executor>& device,
             std::pmr::memory_resource* const upstream_resource)
           : usb_dma_resource{device, upstream_resource, upstream_resource} { }
 
+        template <typename Executor>
         usb_dma_resource(
-            usb_device& device,
+            basic_usb_device<Executor>& device,
             std::pmr::memory_resource* const upstream_resource,
             std::pmr::memory_resource* const backup_resource)
-          : device_{&device}
+          : device_handle_{device.handle()}
           , allocated_dma_chunks_(upstream_resource)
           , backup_resource_{backup_resource} { }
 
+        [[nodiscard]] auto device_handle() const noexcept -> device_handle_type {
+            return device_handle_;
+        }
+
       private:
-        usb_device* device_;
+        device_handle_type device_handle_;
         std::pmr::vector<void*> allocated_dma_chunks_;
         std::pmr::memory_resource* backup_resource_;
 
@@ -38,7 +47,7 @@ namespace usb_asio
             std::size_t const bytes,
             std::size_t const alignment) -> void* override
         {
-            auto ptr = ::libusb_dev_mem_alloc(device_->handle(), bytes);
+            auto ptr = ::libusb_dev_mem_alloc(device_handle(), bytes);
 
             if (ptr != nullptr)
             {
@@ -49,7 +58,7 @@ namespace usb_asio
                 {
                     // Alright then, keep your unaligned DMA buffer.
                     ::libusb_dev_mem_free(
-                        device_->handle(),
+                        device_handle(),
                         std::exchange(ptr, nullptr),
                         bytes);
                 }
@@ -93,7 +102,7 @@ namespace usb_asio
             }
 
             ::libusb_dev_mem_free(
-                device_->handle(),
+                device_handle(),
                 static_cast<unsigned char*>(ptr),
                 bytes);
         }

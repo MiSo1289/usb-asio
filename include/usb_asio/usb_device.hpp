@@ -1,11 +1,11 @@
 #pragma once
 
+#include <compare>
 #include <cstdint>
 #include <span>
 
-#include <boost/asio/execution_context.hpp>
-#include <boost/asio/executor.hpp>
 #include <libusb.h>
+#include "usb_asio/asio.hpp"
 #include "usb_asio/error.hpp"
 #include "usb_asio/libusb_ptr.hpp"
 #include "usb_asio/usb_device_info.hpp"
@@ -61,7 +61,7 @@ namespace usb_asio
             });
         }
 
-        void open(usb_device_info const& info, std::error_code& ec)
+        void open(usb_device_info const& info, error_code& ec)
         {
             close();
 
@@ -91,7 +91,7 @@ namespace usb_asio
 
         void set_configuration(
             std::uint8_t const configuration,
-            std::error_code& ec) noexcept
+            error_code& ec) noexcept
         {
             libusb_try(ec, &::libusb_set_configuration, handle(), configuration);
         }
@@ -119,7 +119,7 @@ namespace usb_asio
 
         void clear_halt(
             std::uint8_t const endpoint,
-            std::error_code& ec) noexcept
+            error_code& ec) noexcept
         {
             libusb_try(ec, &::libusb_clear_halt, handle(), endpoint);
         }
@@ -145,7 +145,7 @@ namespace usb_asio
             });
         }
 
-        void reset_device(std::error_code& ec) noexcept
+        void reset_device(error_code& ec) noexcept
         {
             libusb_try(ec, &::libusb_reset_device, handle());
         }
@@ -174,7 +174,7 @@ namespace usb_asio
         void alloc_streams(
             std::uint32_t const num_streams,
             std::span<std::uint8_t const> const endpoints,
-            std::error_code& ec) noexcept
+            error_code& ec) noexcept
         {
             libusb_try(
                 &::libusb_alloc_streams,
@@ -195,7 +195,7 @@ namespace usb_asio
 
         void free_streams(
             std::span<std::uint8_t const> const endpoints,
-            std::error_code& ec) noexcept
+            error_code& ec) noexcept
         {
             libusb_try(
                 &::libusb_free_streams,
@@ -235,7 +235,13 @@ namespace usb_asio
             return is_open();
         }
 
-        friend auto operator<=>(basic_usb_device const&, basic_usb_device const&) = default;
+        [[nodiscard]] friend auto operator<=>(
+            basic_usb_device const& lhs,
+            basic_usb_device const& rhs) noexcept
+            -> std::strong_ordering
+        {
+            return lhs.handle() <=> rhs.handle();
+        }
 
       private:
         unique_handle_type handle_;

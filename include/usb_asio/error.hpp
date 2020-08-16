@@ -5,9 +5,8 @@
 #include <system_error>
 #include <type_traits>
 
-#include <boost/asio/async_result.hpp>
-#include <boost/asio/post.hpp>
 #include <libusb.h>
+#include "usb_asio/asio.hpp"
 
 namespace usb_asio
 {
@@ -39,6 +38,7 @@ namespace usb_asio
     };
 }  // namespace usb_asio
 
+#if USB_ASIO_USE_STANDALONE_ASIO
 template <>
 struct std::is_error_code_enum<usb_asio::usb_errc>
   : std::true_type
@@ -50,12 +50,25 @@ struct std::is_error_code_enum<usb_asio::usb_transfer_errc>
   : std::true_type
 {
 };
+#else
+template <>
+struct boost::system::is_error_code_enum<usb_asio::usb_errc>
+    : std::true_type
+{
+};
+
+template <>
+struct boost::system::is_error_code_enum<usb_asio::usb_transfer_errc>
+    : std::true_type
+{
+};
+#endif
 
 namespace usb_asio
 {
-    [[nodiscard]] inline auto usb_category() noexcept -> std::error_category const&
+    [[nodiscard]] inline auto usb_category() noexcept -> error_category const&
     {
-        class usb_error_category final : public std::error_category
+        class usb_error_category final : public error_category
         {
           public:
             [[nodiscard]] auto name() const noexcept -> const char* override
@@ -74,14 +87,14 @@ namespace usb_asio
     }
 
     [[nodiscard]] inline auto make_error_code(usb_errc const errc) noexcept
-        -> std::error_code
+        -> error_code
     {
-        return std::error_code{static_cast<int>(errc), usb_category()};
+        return error_code{static_cast<int>(errc), usb_category()};
     }
 
-    [[nodiscard]] inline auto usb_transfer_category() noexcept -> std::error_category const&
+    [[nodiscard]] inline auto usb_transfer_category() noexcept -> error_category const&
     {
-        class usb_transfer_error_category final : public std::error_category
+        class usb_transfer_error_category final : public error_category
         {
           public:
             [[nodiscard]] auto name() const noexcept -> const char* override
@@ -116,19 +129,19 @@ namespace usb_asio
     }
 
     [[nodiscard]] inline auto make_error_code(usb_transfer_errc const errc) noexcept
-        -> std::error_code
+        -> error_code
     {
-        return std::error_code{static_cast<int>(errc), usb_transfer_category()};
+        return error_code{static_cast<int>(errc), usb_transfer_category()};
     }
 
     // clang-format off
     template <typename Fn>
     void try_with_ec(Fn&& fn)
-    requires std::invocable<Fn&&, std::error_code&>
-        && std::is_void_v<std::invoke_result_t<Fn&&, std::error_code&>>
+    requires std::invocable<Fn&&, error_code&>
+        && std::is_void_v<std::invoke_result_t<Fn&&, error_code&>>
     // clang-format on
     {
-        auto ec = std::error_code{};
+        auto ec = error_code{};
         std::invoke(std::forward<Fn>(fn), ec);
         if (ec) { throw std::system_error{ec}; }
     }
@@ -136,10 +149,10 @@ namespace usb_asio
     // clang-format off
     template <typename Fn>
     auto try_with_ec(Fn&& fn)
-    requires std::invocable<Fn&&, std::error_code&>
+    requires std::invocable<Fn&&, error_code&>
     // clang-format on
     {
-        auto ec = std::error_code{};
+        auto ec = error_code{};
         auto result = std::invoke(std::forward<Fn>(fn), ec);
         if (ec) { throw std::system_error{ec}; }
 
@@ -158,22 +171,22 @@ namespace usb_asio
         BlockingOpExecutor&& blocking_op_executor,
         CompletionToken&& token,
         BlockingFn&& blocking_fn)
-    requires std::invocable<BlockingFn&&, std::error_code&>
+    requires std::invocable<BlockingFn&&, error_code&>
     // clang-format on
     {
-        auto completion = boost::asio::async_completion<
+        auto completion = asio::async_completion<
             CompletionToken,
             CompletionHandlerSig>{token};
 
-        boost::asio::post(
+        asio::post(
             std::forward<BlockingOpExecutor>(blocking_op_executor),
             [completion_handler = std::move(completion.completion_handler),
              executor = std::forward<Executor>(executor),
              blocking_fn = std::forward<BlockingFn>(blocking_fn)]() mutable {
-                auto ec = std::error_code{};
+                auto ec = error_code{};
                 auto result = std::invoke(std::move(blocking_fn), ec);
 
-                boost::asio::post(
+                asio::post(
                     std::move(executor),
                     std::bind_front(std::move(completion_handler), ec, std::move(result)));
             });
@@ -193,23 +206,23 @@ namespace usb_asio
         BlockingOpExecutor&& blocking_op_executor,
         CompletionToken&& token,
         BlockingFn&& blocking_fn)
-    requires std::invocable<BlockingFn&&, std::error_code&>
-        && std::is_void_v<std::invoke_result_t<BlockingFn&&, std::error_code&>>
+    requires std::invocable<BlockingFn&&, error_code&>
+        && std::is_void_v<std::invoke_result_t<BlockingFn&&, error_code&>>
     // clang-format on
     {
-        auto completion = boost::asio::async_completion<
+        auto completion = asio::async_completion<
             CompletionToken,
             CompletionHandlerSig>{token};
 
-        boost::asio::post(
+        asio::post(
             std::forward<BlockingOpExecutor>(blocking_op_executor),
             [completion_handler = std::move(completion.completion_handler),
                 executor = std::forward<Executor>(executor),
                 blocking_fn = std::forward<BlockingFn>(blocking_fn)]() mutable {
-                auto ec = std::error_code{};
+                auto ec = error_code{};
                 std::invoke(std::move(blocking_fn), ec);
 
-                boost::asio::post(
+                asio::post(
                     std::move(executor),
                     std::bind_front(std::move(completion_handler), ec));
             });
@@ -223,7 +236,7 @@ namespace usb_asio
         typename... FnArgs,
         typename... Args>
     auto libusb_try(
-        std::error_code& ec,
+        error_code& ec,
         auto (*const fn)(FnArgs...)->RetCode,
         Args const... args) noexcept
         -> std::make_unsigned_t<RetCode>

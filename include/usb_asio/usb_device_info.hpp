@@ -50,28 +50,28 @@ namespace usb_asio
             constexpr auto max_depth = 7;
 
             auto ports = std::vector<std::uint8_t>(max_depth);
-            auto error_code = std::error_code{};
+            auto ec = error_code{};
 
             while (true)
             {
                 auto const num_ports = libusb_try(
-                    error_code,
+                    ec,
                     ::libusb_get_port_numbers,
                     handle(),
                     ports.data(),
                     static_cast<int>(ports.size()));
 
-                if (error_code)
+                if (ec)
                 {
                     // This should not happen
-                    if (error_code == usb_errc::overflow)
+                    if (ec == usb_errc::overflow)
                     {
                         ports.resize(2 * ports.size());
                         continue;
                     }
 
                     // This definitely should not happen
-                    throw std::system_error{error_code};
+                    throw std::system_error{ec};
                 }
 
                 ports.resize(num_ports);
@@ -110,7 +110,7 @@ namespace usb_asio
 
         [[nodiscard]] auto max_iso_packet_size(
             std::uint8_t const endpoint,
-            std::error_code& ec) const noexcept
+            error_code& ec) const noexcept
             -> std::size_t
         {
             return libusb_try(
@@ -125,7 +125,7 @@ namespace usb_asio
             });
         }
 
-        [[nodiscard]] auto device_descriptor(std::error_code& ec) const noexcept
+        [[nodiscard]] auto device_descriptor(error_code& ec) const noexcept
             -> ::libusb_device_descriptor
         {
             auto descriptor = ::libusb_device_descriptor{};
@@ -142,7 +142,7 @@ namespace usb_asio
         }
 
         [[nodiscard]] auto active_config_descriptor(
-            std::error_code& ec) const noexcept
+            error_code& ec) const noexcept
             -> config_descriptor_ptr
         {
             auto descriptor = config_descriptor_ptr::pointer{};
@@ -166,7 +166,7 @@ namespace usb_asio
 
         [[nodiscard]] auto config_descriptor(
             std::uint8_t const config_index,
-            std::error_code& ec) const noexcept
+            error_code& ec) const noexcept
             -> config_descriptor_ptr
         {
             auto descriptor = config_descriptor_ptr::pointer{};
@@ -191,7 +191,7 @@ namespace usb_asio
 
         [[nodiscard]] auto config_descriptor_by_id_value(
             std::uint8_t const config_id_value,
-            std::error_code& ec) const noexcept
+            error_code& ec) const noexcept
             -> config_descriptor_ptr
         {
             auto descriptor = config_descriptor_ptr::pointer{};

@@ -1,32 +1,25 @@
 #pragma once
 
-#include <algorithm>
-#include <span>
+#include <compare>
 #include <thread>
-#include <vector>
 
-#include <boost/asio/async_result.hpp>
-#include <boost/asio/execution_context.hpp>
-#include <boost/asio/executor_work_guard.hpp>
-#include <boost/asio/io_context.hpp>
-#include <boost/asio/post.hpp>
 #include <libusb.h>
+#include "usb_asio/asio.hpp"
 #include "usb_asio/error.hpp"
 #include "usb_asio/libusb_ptr.hpp"
-#include "usb_asio/usb_device_info.hpp"
 
 namespace usb_asio
 {
-    class usb_service final : public boost::asio::execution_context::service
+    class usb_service final : public asio::execution_context::service
     {
       public:
         using handle_type = ::libusb_context*;
         using unique_handle_type = libusb_ptr<::libusb_context, &::libusb_exit>;
-        using blocking_op_executor_type = boost::asio::io_context::executor_type;
+        using blocking_op_executor_type = asio::io_context::executor_type;
         using key_type = usb_service;
 
-        explicit usb_service(boost::asio::execution_context& context)
-          : boost::asio::execution_context::service{context}
+        explicit usb_service(asio::execution_context& context)
+          : asio::execution_context::service{context}
           , handle_{create()}
           , blocking_op_thread_{[this]() { blocking_op_ioc_.run(); }}
           , blocking_op_work_guard_{blocking_op_ioc_.get_executor()}
@@ -49,42 +42,6 @@ namespace usb_asio
         [[nodiscard]] auto blocking_op_executor() noexcept -> blocking_op_executor_type
         {
             return blocking_op_ioc_.get_executor();
-        }
-
-        [[nodiscard]] auto list_devices() -> std::vector<usb_device_info>
-        {
-            return try_with_ec([&](auto& ec) {
-                return list_devices(ec);
-            });
-        }
-
-        [[nodiscard]] auto list_devices(std::error_code& ec)
-            -> std::vector<usb_device_info>
-        {
-            auto device_handles = static_cast<usb_device_info::handle_type*>(nullptr);
-            auto const num_devices = libusb_try(
-                ec,
-                &::libusb_get_device_list,
-                handle_.get(),
-                &device_handles);
-            if (ec) { return {}; }
-
-            auto handles_deleter = [](auto const device_handles) {
-                ::libusb_free_device_list(device_handles, true);
-            };
-            auto handles_owner = std::unique_ptr<usb_device_info::handle_type[], decltype(handles_deleter)>{
-                device_handles,
-                handles_deleter,
-            };
-
-            auto result = std::vector<usb_device_info>{};
-            result.reserve(num_devices);
-            std::ranges::transform(
-                std::span{device_handles, num_devices},
-                std::back_inserter(result),
-                [](auto const handle) { return usb_device_info{handle}; });
-
-            return result;
         }
 
         void notify_dev_opened()
@@ -111,9 +68,8 @@ namespace usb_asio
         auto operator=(usb_service&&) = delete;
 
         friend auto operator<=>(usb_service const& lhs, usb_service const& rhs) noexcept
-            -> std::strong_ordering
         {
-            return lhs.handle_ <=> rhs.handle_;
+            return lhs.handle() <=> rhs.handle();
         }
 
       private:
@@ -121,9 +77,9 @@ namespace usb_asio
         std::atomic<std::size_t> open_devices_ = 0;
         std::mutex usb_event_thread_startup_mutex_;
         std::jthread usb_event_thread_;
-        boost::asio::io_context blocking_op_ioc_;
+        asio::io_context blocking_op_ioc_;
         std::jthread blocking_op_thread_;
-        boost::asio::executor_work_guard<blocking_op_executor_type>
+        asio::executor_work_guard<blocking_op_executor_type>
             blocking_op_work_guard_;
 
         static void run_usb_event_thread(
@@ -144,17 +100,4 @@ namespace usb_asio
         }
     };
 
-    [[nodiscard]] auto list_usb_devices(boost::asio::execution_context& context)
-        -> std::vector<usb_device_info>
-    {
-        return boost::asio::use_service<usb_service>(context).list_devices();
-    }
-
-    [[nodiscard]] auto list_usb_devices(
-        boost::asio::execution_context& context,
-        std::error_code& ec)
-        -> std::vector<usb_device_info>
-    {
-        return boost::asio::use_service<usb_service>(context).list_devices(ec);
-    }
 }  // namespace usb_asio

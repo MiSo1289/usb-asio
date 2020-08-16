@@ -8,13 +8,10 @@
 #include <ranges>
 #include <span>
 #include <vector>
+#include <stdexcept>
 
-#include <boost/asio/async_result.hpp>
-#include <boost/asio/buffer.hpp>
-#include <boost/asio/executor.hpp>
-#include <boost/asio/executor_work_guard.hpp>
-#include <boost/asio/post.hpp>
 #include <libusb.h>
+#include "usb_asio/asio.hpp"
 #include "usb_asio/error.hpp"
 #include "usb_asio/usb_device.hpp"
 
@@ -66,7 +63,7 @@ namespace usb_asio
     struct usb_iso_packet_transfer_result
     {
         std::size_t transferred;
-        std::error_code ec;
+        error_code ec;
     };
 
     template <
@@ -90,7 +87,7 @@ namespace usb_asio
     template <
         usb_transfer_type transfer_type_,
         usb_transfer_direction transfer_direction_,
-        typename Executor = boost::asio::executor>
+        typename Executor = asio::executor>
     class basic_usb_transfer
     {
       public:
@@ -99,7 +96,7 @@ namespace usb_asio
         using executor_type = Executor;
         using traits_type = usb_transfer_traits<transfer_type_, transfer_direction_>;
         using result_type = typename traits_type::result_type;
-        using completion_handler_sig = void(std::error_code, result_type);
+        using completion_handler_sig = void(error_code, result_type);
 
         static constexpr auto transfer_type = transfer_type_;
         static constexpr auto transfer_direction = transfer_direction_;
@@ -269,14 +266,14 @@ namespace usb_asio
             });
         }
 
-        void cancel(std::error_code& ec) noexcept
+        void cancel(error_code& ec) noexcept
         {
             libusb_try(ec, ::libusb_cancel_transfer, handle());
         }
 
         // clang-format off
-        template <typename CompletionToken = boost::asio::default_completion_token_t<executor_type>>
-        auto async_read_some(boost::asio::mutable_buffer const buffer, CompletionToken&& token = {})
+        template <typename CompletionToken = asio::default_completion_token_t<executor_type>>
+        auto async_read_some(asio::mutable_buffer const buffer, CompletionToken&& token = {})
         requires (transfer_direction == usb_transfer_direction::in)
             && (transfer_type != usb_transfer_type::control)
         // clang-format on
@@ -288,8 +285,8 @@ namespace usb_asio
         }
 
         // clang-format off
-        template <typename CompletionToken = boost::asio::default_completion_token_t<executor_type>>
-        auto async_write_some(boost::asio::const_buffer const buffer, CompletionToken&& token = {})
+        template <typename CompletionToken = asio::default_completion_token_t<executor_type>>
+        auto async_write_some(asio::const_buffer const buffer, CompletionToken&& token = {})
         requires (transfer_direction == usb_transfer_direction::out)
             && (transfer_type != usb_transfer_type::control)
         // clang-format on
@@ -301,7 +298,7 @@ namespace usb_asio
         }
 
         // clang-format off
-        template <typename CompletionToken = boost::asio::default_completion_token_t<executor_type>>
+        template <typename CompletionToken = asio::default_completion_token_t<executor_type>>
         auto async_control(
             usb_control_request_recipient const recipient,
             usb_control_request_type const type,
@@ -335,7 +332,7 @@ namespace usb_asio
         {
             executor_type executor;
             [[no_unique_address]] typename traits_type::result_storage_type result_storage = {};
-            std::optional<boost::asio::executor_work_guard<executor_type>>
+            std::optional<asio::executor_work_guard<executor_type>>
                 work_guard = std::nullopt;
             std::function<completion_handler_sig> completion_handler = {};
         };
@@ -345,7 +342,7 @@ namespace usb_asio
 
         static void completion_callback(handle_type const handle) noexcept
         {
-            auto const ec = std::error_code{
+            auto const ec = error_code{
                 static_cast<usb_transfer_errc>(handle->status),
             };
             auto& context = *static_cast<CompletionContext*>(handle->user_data);
@@ -365,6 +362,7 @@ namespace usb_asio
                                 static_cast<usb_transfer_errc>(packet_desc.status),
                             };
                         });
+                    return std::span{context.result_storage};
                 }
                 else
                 {
@@ -372,31 +370,32 @@ namespace usb_asio
                 }
             }();
 
-            boost::asio::post(
+            asio::post(
                 context.executor,
                 std::bind_front(
                     std::move(context.completion_handler),
                     ec,
                     result));
+
             context.work_guard.reset();
         }
 
         template <typename CompletionToken>
         auto async_submit_impl(CompletionToken&& token)
         {
-            auto completion = boost::asio::async_completion<
+            auto completion = asio::async_completion<
                 CompletionToken,
                 completion_handler_sig>{token};
 
             completion_context_->work_guard.emplace(completion_context_->executor);
-            completion_context_->completion_handler = completion.completion_handler;
+            completion_context_->completion_handler = std::move(completion.completion_handler);
 
-            auto ec = std::error_code{};
+            auto ec = error_code{};
             libusb_try(ec, &::libusb_submit_transfer, handle());
 
             if (ec)
             {
-                boost::asio::post(
+                asio::post(
                     completion_context_->executor,
                     std::bind_front(
                         std::move(completion_context_->completion_handler),
@@ -416,4 +415,64 @@ namespace usb_asio
             }
         }
     };
+
+    template <typename Executor = asio::executor>
+    using basic_usb_out_control_transfer = basic_usb_transfer<
+        usb_transfer_type::control,
+        usb_transfer_direction::out>;
+    using usb_out_control_transfer = basic_usb_out_control_transfer<>;
+
+    template <typename Executor = asio::executor>
+    using basic_usb_in_control_transfer = basic_usb_transfer<
+        usb_transfer_type::control,
+        usb_transfer_direction::in>;
+    using usb_in_control_transfer = basic_usb_in_control_transfer<>;
+
+    template <typename Executor = asio::executor>
+    using basic_usb_out_isochronous_transfer = basic_usb_transfer<
+        usb_transfer_type::isochronous,
+        usb_transfer_direction::out>;
+    using usb_out_isochronous_transfer = basic_usb_out_isochronous_transfer<>;
+
+    template <typename Executor = asio::executor>
+    using basic_usb_in_isochronous_transfer = basic_usb_transfer<
+        usb_transfer_type::isochronous,
+        usb_transfer_direction::in>;
+    using usb_in_isochronous_transfer = basic_usb_in_isochronous_transfer<>;
+
+    template <typename Executor = asio::executor>
+    using basic_usb_out_bulk_transfer = basic_usb_transfer<
+        usb_transfer_type::bulk,
+        usb_transfer_direction::out>;
+    using usb_out_bulk_transfer = basic_usb_out_bulk_transfer<>;
+
+    template <typename Executor = asio::executor>
+    using basic_usb_in_bulk_transfer = basic_usb_transfer<
+        usb_transfer_type::bulk,
+        usb_transfer_direction::in>;
+    using usb_in_bulk_transfer = basic_usb_in_bulk_transfer<>;
+
+    template <typename Executor = asio::executor>
+    using basic_usb_out_interrupt_transfer = basic_usb_transfer<
+        usb_transfer_type::interrupt,
+        usb_transfer_direction::out>;
+    using usb_out_interrupt_transfer = basic_usb_out_interrupt_transfer<>;
+
+    template <typename Executor = asio::executor>
+    using basic_usb_in_interrupt_transfer = basic_usb_transfer<
+        usb_transfer_type::interrupt,
+        usb_transfer_direction::in>;
+    using usb_in_interrupt_transfer = basic_usb_in_interrupt_transfer<>;
+
+    template <typename Executor = asio::executor>
+    using basic_usb_out_bulk_stream_transfer = basic_usb_transfer<
+        usb_transfer_type::bulk_stream,
+        usb_transfer_direction::out>;
+    using usb_out_bulk_stream_transfer = basic_usb_out_bulk_stream_transfer<>;
+
+    template <typename Executor = asio::executor>
+    using basic_usb_in_bulk_stream_transfer = basic_usb_transfer<
+        usb_transfer_type::bulk_stream,
+        usb_transfer_direction::in>;
+    using usb_in_bulk_stream_transfer = basic_usb_in_bulk_stream_transfer<>;
 }  // namespace usb_asio

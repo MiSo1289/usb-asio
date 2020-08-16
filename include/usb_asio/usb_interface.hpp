@@ -5,11 +5,8 @@
 #include <span>
 #include <utility>
 
-#include <boost/asio/async_result.hpp>
-#include <boost/asio/execution_context.hpp>
-#include <boost/asio/executor.hpp>
-#include <boost/asio/post.hpp>
 #include <libusb.h>
+#include "usb_asio/asio.hpp"
 #include "usb_asio/error.hpp"
 #include "usb_asio/libusb_ptr.hpp"
 #include "usb_asio/usb_device.hpp"
@@ -17,7 +14,7 @@
 
 namespace usb_asio
 {
-    template <typename Executor = boost::asio::executor>
+    template <typename Executor = asio::executor>
     class basic_usb_interface
     {
       public:
@@ -27,7 +24,7 @@ namespace usb_asio
 
         explicit basic_usb_interface(executor_type const& executor)
           : executor_{executor}
-          , service_{&boost::asio::use_service<service_type>(executor.context())}
+          , service_{&asio::use_service<service_type>(executor.context())}
         {
         }
 
@@ -90,7 +87,7 @@ namespace usb_asio
 
         ~basic_usb_interface() noexcept
         {
-            auto ec = std::error_code{};
+            auto ec = error_code{};
             unclaim(ec);
         }
 
@@ -109,7 +106,7 @@ namespace usb_asio
         void claim(
             basic_usb_device<OtherExecutor>& device,
             std::uint8_t const number,
-            std::error_code& ec) noexcept
+            error_code& ec) noexcept
         {
             claim(device, number, true, ec);
         }
@@ -119,7 +116,7 @@ namespace usb_asio
             basic_usb_device<OtherExecutor>& device,
             std::uint8_t const number,
             bool const detach_kernel_driver,
-            std::error_code& ec) noexcept
+            error_code& ec) noexcept
         {
             unclaim(ec);
             if (ec) { return; }
@@ -149,14 +146,14 @@ namespace usb_asio
             });
         }
 
-        void unclaim(std::error_code& ec) noexcept
+        void unclaim(error_code& ec) noexcept
         {
             unclaim(true, ec);
         }
 
         // Avoiding the libusb name 'release'
         // to avoid confusion with unique_ptr-like release (here called detach).
-        void unclaim(bool const reattach_kernel_driver, std::error_code& ec) noexcept
+        void unclaim(bool const reattach_kernel_driver, error_code& ec) noexcept
         {
             ec.clear();
 
@@ -179,13 +176,13 @@ namespace usb_asio
             detach();
         }
 
-        template <typename CompletionToken = boost::asio::default_completion_token_t<executor_type>>
+        template <typename CompletionToken = asio::default_completion_token_t<executor_type>>
         auto async_unclaim(CompletionToken&& token = {})
         {
             return async_unclaim(true, std::forward<CompletionToken>(token));
         }
 
-        template <typename CompletionToken = boost::asio::default_completion_token_t<executor_type>>
+        template <typename CompletionToken = asio::default_completion_token_t<executor_type>>
         auto async_unclaim(
             bool const reattach_kernel_driver,
             CompletionToken&& token = {})
@@ -208,7 +205,7 @@ namespace usb_asio
 
         void set_alt_setting(
             std::uint8_t const alt_setting,
-            std::error_code& ec) noexcept
+            error_code& ec) noexcept
         {
             libusb_try(
                 ec,
@@ -218,7 +215,7 @@ namespace usb_asio
                 alt_setting);
         }
 
-        template <typename CompletionToken = boost::asio::default_completion_token_t<executor_type>>
+        template <typename CompletionToken = asio::default_completion_token_t<executor_type>>
         auto async_set_alt_setting(
             std::uint8_t const alt_setting,
             CompletionToken&& token = {})
@@ -263,7 +260,7 @@ namespace usb_asio
         template <std::convertible_to<executor_type> OtherExecutor>
         auto operator=(basic_usb_interface<OtherExecutor>&& other) noexcept -> basic_usb_interface&
         {
-            auto ec = std::error_code{};
+            auto ec = error_code{};
             unclaim(ec);
 
             device_handle_ = std::exchange(other.device_handle_, nullptr);
@@ -279,7 +276,24 @@ namespace usb_asio
             return is_claimed();
         }
 
-        friend auto operator<=>(basic_usb_interface const&, basic_usb_interface const&) = default;
+        [[nodiscard]] friend auto operator<=>(
+            basic_usb_interface const& lhs,
+            basic_usb_interface const& rhs) noexcept
+            -> std::strong_ordering
+        {
+            if (auto const result = lhs.device_handle() <=> rhs.device_handle())
+                return result;
+            return lhs.number() <=> rhs.number();
+        }
+
+        [[nodiscard]] friend auto operator==(
+            basic_usb_interface const& lhs,
+            basic_usb_interface const& rhs) noexcept
+            -> std::strong_ordering
+        {
+            return lhs.device_handle() == rhs.device_handle()
+                   && lhs.number() == rhs.number();
+        }
 
       private:
         device_handle_type device_handle_;
