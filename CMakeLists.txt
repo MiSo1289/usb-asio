@@ -15,6 +15,8 @@ if(DOXYGEN_FOUND)
   doxygen_add_docs(usb_asio_doxygen "include")
 endif()
 
+option(USB_ASIO_USE_STANDALONE_ASIO "Use standalone asio instead of boost::asio" OFF)
+
 add_library(usb_asio INTERFACE)
 add_library(usb_asio::usb_asio ALIAS usb_asio)
 target_compile_features(usb_asio INTERFACE cxx_std_20)
@@ -26,5 +28,9 @@ target_link_libraries(
   CONAN_PKG::boost
   CONAN_PKG::libusb
 )
+
+if(USB_ASIO_USE_STANDALONE_ASIO)
+  target_compile_definitions(usb_asio INTERFACE USB_ASIO_USE_STANDALONE_ASIO)
+endif()
 
 add_subdirectory(examples)

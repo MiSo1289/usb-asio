@@ -10,13 +10,14 @@ class UsbAsio(ConanFile):
         "include/*",
     )
     options = {
-        "examples": [True, False]
+        "asio": ["boost", "standalone"],
+        "examples": [True, False],
     }
     default_options = {
+        "asio": "boost",
         "examples": False,
     }
     requires = (
-        "boost/1.73.0",
         "libusb/1.0.23",
     )
 
@@ -25,12 +26,19 @@ class UsbAsio(ConanFile):
             version_file.write(str(self.version))
 
     def requirements(self):
+        if self.options.asio == "boost":
+            self.requires("boost/1.73.0")
+        else:
+            self.requires("asio/1.16.1")
+
         if self.options.examples:
             self.requires("fmt/7.0.1")
 
     def build(self):
         if self.options.examples:
             cmake = CMake(self)
+            cmake.definitions["USB_ASIO_USE_STANDALONE_ASIO"] \
+                = self.options.asio == "standalone"
             cmake.configure()
             cmake.build()
 
@@ -41,3 +49,6 @@ class UsbAsio(ConanFile):
         del self.options.examples
 
         self.info.header_only()
+
+    def package_info(self):
+        self.cpp_info.defines = ["USB_ASIO_USE_STANDALONE_ASIO"]

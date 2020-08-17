@@ -1,10 +1,6 @@
 #pragma once
 
-#ifndef USB_ASIO_USE_STANDALONE_ASIO
-#define USB_ASIO_USE_STANDALONE_ASIO 0
-#endif
-
-#if USB_ASIO_USE_STANDALONE_ASIO
+#ifdef USB_ASIO_USE_STANDALONE_ASIO
 
 #include <system_error>
 
@@ -31,7 +27,7 @@
 
 namespace usb_asio
 {
-#if USB_ASIO_USE_STANDALONE_ASIO
+#ifdef USB_ASIO_USE_STANDALONE_ASIO
     namespace asio = ::asio;
 
     using error_code = std::error_code;
