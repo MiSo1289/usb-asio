@@ -53,13 +53,13 @@ struct std::is_error_code_enum<usb_asio::usb_transfer_errc>
 #else
 template <>
 struct boost::system::is_error_code_enum<usb_asio::usb_errc>
-    : std::true_type
+  : std::true_type
 {
 };
 
 template <>
 struct boost::system::is_error_code_enum<usb_asio::usb_transfer_errc>
-    : std::true_type
+  : std::true_type
 {
 };
 #endif
@@ -181,7 +181,9 @@ namespace usb_asio
         asio::post(
             std::forward<BlockingOpExecutor>(blocking_op_executor),
             [completion_handler = std::move(completion.completion_handler),
-             executor = std::forward<Executor>(executor),
+             executor = asio::prefer(
+                 std::forward<Executor>(executor),
+                 asio::execution::outstanding_work_t::tracked),
              blocking_fn = std::forward<BlockingFn>(blocking_fn)]() mutable {
                 auto ec = error_code{};
                 auto result = std::invoke(std::move(blocking_fn), ec);
@@ -217,8 +219,8 @@ namespace usb_asio
         asio::post(
             std::forward<BlockingOpExecutor>(blocking_op_executor),
             [completion_handler = std::move(completion.completion_handler),
-                executor = std::forward<Executor>(executor),
-                blocking_fn = std::forward<BlockingFn>(blocking_fn)]() mutable {
+             executor = std::forward<Executor>(executor),
+             blocking_fn = std::forward<BlockingFn>(blocking_fn)]() mutable {
                 auto ec = error_code{};
                 std::invoke(std::move(blocking_fn), ec);
 

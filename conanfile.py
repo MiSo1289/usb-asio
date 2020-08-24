@@ -27,9 +27,9 @@ class UsbAsio(ConanFile):
 
     def requirements(self):
         if self.options.asio == "boost":
-            self.requires("boost/1.73.0")
+            self.requires("boost/1.74.0")
         else:
-            self.requires("asio/1.16.1")
+            self.requires("asio/1.17.0")
 
         if self.options.examples:
             self.requires("fmt/7.0.1")

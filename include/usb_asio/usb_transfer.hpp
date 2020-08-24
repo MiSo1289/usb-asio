@@ -7,8 +7,8 @@
 #include <memory_resource>
 #include <ranges>
 #include <span>
-#include <vector>
 #include <stdexcept>
+#include <vector>
 
 #include <libusb.h>
 #include "usb_asio/asio.hpp"
@@ -21,7 +21,7 @@ namespace usb_asio
     {
       public:
         explicit usb_control_transfer_buffer(std::size_t const size)
-            : usb_control_transfer_buffer{size, std::pmr::get_default_resource()} {}
+          : usb_control_transfer_buffer{size, std::pmr::get_default_resource()} { }
         usb_control_transfer_buffer(
             std::size_t const size,
             std::pmr::memory_resource* const mem_resource)
@@ -87,7 +87,7 @@ namespace usb_asio
     template <
         usb_transfer_type transfer_type_,
         usb_transfer_direction transfer_direction_,
-        typename Executor = asio::executor>
+        typename Executor = asio::any_io_executor>
     class basic_usb_transfer
     {
       public:
@@ -104,16 +104,14 @@ namespace usb_asio
         // clang-format off
         template <typename OtherExecutor>
         basic_usb_transfer(
-            executor_type& executor,
+            executor_type const& executor,
             basic_usb_device<OtherExecutor>& device,
-            std::chrono::milliseconds const timeout = usb_no_timeout,
-            std::pmr::memory_resource* const mem_resource = std::pmr::get_default_resource())
+            std::chrono::milliseconds const timeout = usb_no_timeout)
         requires (transfer_type == usb_transfer_type::control)
           // clang-format on
           : handle_{::libusb_alloc_transfer(0)}
-          , completion_context_{
-                std::make_unique<CompletionContext>(CompletionContext{executor}),
-            }
+          , executor_{executor}
+          , completion_context_{std::make_unique<CompletionContext>()}
         {
             check_is_constructed();
 
@@ -127,23 +125,31 @@ namespace usb_asio
         }
 
         // clang-format off
+        template <std::convertible_to<executor_type> OtherExecutor>
+        explicit basic_usb_transfer(
+            basic_usb_device<OtherExecutor>& device,
+            std::chrono::milliseconds const timeout = usb_no_timeout)
+        requires (transfer_type == usb_transfer_type::control)
+          // clang-format on
+          : basic_usb_transfer{device.get_executor(), timeout}
+        {
+        }
+
+        // clang-format off
         template <typename OtherExecutor, typename PacketSizeRange>
         basic_usb_transfer(
-            executor_type& executor,
+            executor_type const& executor,
             basic_usb_device<OtherExecutor>& device,
             std::uint8_t const endpoint,
             PacketSizeRange&& packet_sizes,
-            std::chrono::milliseconds const timeout = usb_no_timeout,
-            std::pmr::memory_resource* const mem_resource = std::pmr::get_default_resource())
+            std::chrono::milliseconds const timeout = usb_no_timeout)
         requires (transfer_type == usb_transfer_type::isochronous)
             && std::ranges::input_range<PacketSizeRange>
             && std::ranges::sized_range<PacketSizeRange>
             && std::unsigned_integral<std::ranges::range_value_t<PacketSizeRange>>
           // clang-format on
           : handle_{::libusb_alloc_transfer(static_cast<int>(std::ranges::size(packet_sizes)))},
-            completion_context_{
-                std::make_unique<CompletionContext>(CompletionContext{executor}),
-            }
+            executor_{executor}, completion_context_{std::make_unique<CompletionContext>()}
         {
             check_is_constructed();
 
@@ -171,17 +177,83 @@ namespace usb_asio
         // clang-format off
         template <typename OtherExecutor>
         basic_usb_transfer(
-            executor_type& executor,
+            executor_type const& executor,
             basic_usb_device<OtherExecutor>& device,
             std::uint8_t const endpoint,
-            std::chrono::milliseconds const timeout = usb_no_timeout,
-            std::pmr::memory_resource* const mem_resource = std::pmr::get_default_resource())
+            std::size_t const num_packets,
+            std::size_t const packet_size,
+            std::chrono::milliseconds const timeout = usb_no_timeout)
+        requires (transfer_type == usb_transfer_type::isochronous)
+          // clang-format on
+          : basic_usb_transfer{
+              executor,
+              device,
+              endpoint,
+              std::views::iota(std::size_t{0}, num_packets)
+                  | std::views::transform([&](auto) { return packet_size; }),
+              timeout,
+          }
+        {
+        }
+
+        // clang-format off
+        template <std::convertible_to<executor_type> OtherExecutor, typename PacketSizeRange>
+        basic_usb_transfer(
+            basic_usb_device<OtherExecutor>& device,
+            std::uint8_t const endpoint,
+            PacketSizeRange&& packet_sizes,
+            std::chrono::milliseconds const timeout = usb_no_timeout)
+        requires (transfer_type == usb_transfer_type::isochronous)
+                 && std::ranges::input_range<PacketSizeRange>
+                 && std::ranges::sized_range<PacketSizeRange>
+                 && std::unsigned_integral<std::ranges::range_value_t<PacketSizeRange>>
+          // clang-format on
+          : basic_usb_transfer{
+                device.get_executor(),
+                device,
+                endpoint,
+                std::forward<PacketSizeRange>(packet_sizes),
+                timeout,
+            }
+        {
+        }
+
+        // clang-format off
+        template <std::convertible_to<executor_type> OtherExecutor, typename PacketSizeRange>
+        basic_usb_transfer(
+            basic_usb_device<OtherExecutor>& device,
+            std::uint8_t const endpoint,
+            std::size_t const num_packets,
+            std::size_t const packet_size,
+            std::chrono::milliseconds const timeout = usb_no_timeout)
+        requires (transfer_type == usb_transfer_type::isochronous)
+                 && std::ranges::input_range<PacketSizeRange>
+                 && std::ranges::sized_range<PacketSizeRange>
+                 && std::unsigned_integral<std::ranges::range_value_t<PacketSizeRange>>
+          // clang-format on
+          : basic_usb_transfer{
+                device.get_executor(),
+                device,
+                endpoint,
+                num_packets,
+                packet_size,
+                timeout,
+            }
+        {
+        }
+
+        // clang-format off
+        template <typename OtherExecutor>
+        basic_usb_transfer(
+            executor_type const& executor,
+            basic_usb_device<OtherExecutor>& device,
+            std::uint8_t const endpoint,
+            std::chrono::milliseconds const timeout = usb_no_timeout)
         requires (transfer_type == usb_transfer_type::bulk)
           // clang-format on
           : handle_{::libusb_alloc_transfer(0)}
-          , completion_context_{
-                std::make_unique<CompletionContext>(CompletionContext{executor}),
-            }
+          , executor_{executor}
+          , completion_context_{std::make_unique<CompletionContext>()}
         {
             check_is_constructed();
 
@@ -197,19 +269,34 @@ namespace usb_asio
         }
 
         // clang-format off
-        template <typename OtherExecutor>
+        template <std::convertible_to<executor_type> OtherExecutor>
         basic_usb_transfer(
-            executor_type& executor,
             basic_usb_device<OtherExecutor>& device,
             std::uint8_t const endpoint,
-            std::chrono::milliseconds const timeout = usb_no_timeout,
-            std::pmr::memory_resource* const mem_resource = std::pmr::get_default_resource())
+            std::chrono::milliseconds const timeout = usb_no_timeout)
+        requires (transfer_type == usb_transfer_type::bulk)
+          // clang-format on
+          : basic_usb_transfer{
+              device.get_executor(),
+              device,
+              endpoint,
+              timeout,
+          }
+        {
+        }
+
+        // clang-format off
+        template <typename OtherExecutor>
+        basic_usb_transfer(
+            executor_type const& executor,
+            basic_usb_device<OtherExecutor>& device,
+            std::uint8_t const endpoint,
+            std::chrono::milliseconds const timeout = usb_no_timeout)
         requires (transfer_type == usb_transfer_type::interrupt)
           // clang-format on
           : handle_{::libusb_alloc_transfer(0)}
-          , completion_context_{
-                std::make_unique<CompletionContext>(CompletionContext{executor}),
-            }
+          , executor_{executor}
+          , completion_context_{std::make_unique<CompletionContext>()}
         {
             check_is_constructed();
 
@@ -225,20 +312,35 @@ namespace usb_asio
         }
 
         // clang-format off
+        template <std::convertible_to<executor_type> OtherExecutor>
+        basic_usb_transfer(
+            basic_usb_device<OtherExecutor>& device,
+            std::uint8_t const endpoint,
+            std::chrono::milliseconds const timeout = usb_no_timeout)
+        requires (transfer_type == usb_transfer_type::interrupt)
+          // clang-format on
+          : basic_usb_transfer{
+              device.get_executor(),
+              device,
+              endpoint,
+              timeout,
+          }
+        {
+        }
+
+        // clang-format off
         template <typename OtherExecutor>
         basic_usb_transfer(
-            executor_type& executor,
+            executor_type const& executor,
             basic_usb_device<OtherExecutor>& device,
             std::uint8_t const endpoint,
             std::uint32_t const stream_id,
-            std::chrono::milliseconds const timeout = usb_no_timeout,
-            std::pmr::memory_resource* const mem_resource = std::pmr::get_default_resource())
+            std::chrono::milliseconds const timeout = usb_no_timeout)
         requires (transfer_type == usb_transfer_type::bulk_stream)
           // clang-format on
           : handle_{::libusb_alloc_transfer(0)}
-          , completion_context_{
-                std::make_unique<CompletionContext>(CompletionContext{executor}),
-            }
+          , executor_{executor}
+          , completion_context_{std::make_unique<CompletionContext>()}
         {
             check_is_constructed();
 
@@ -252,6 +354,25 @@ namespace usb_asio
                 &completion_callback,
                 completion_context_.get(),
                 static_cast<unsigned>(timeout.count()));
+        }
+
+        // clang-format off
+        template <std::convertible_to<executor_type> OtherExecutor>
+        basic_usb_transfer(
+            basic_usb_device<OtherExecutor>& device,
+            std::uint8_t const endpoint,
+            std::uint32_t const stream_id,
+            std::chrono::milliseconds const timeout = usb_no_timeout)
+        requires (transfer_type == usb_transfer_type::bulk_stream)
+          // clang-format on
+          : basic_usb_transfer{
+              device.get_executor(),
+              device,
+              endpoint,
+              stream_id,
+              timeout,
+          }
+        {
         }
 
         [[nodiscard]] auto handle() const noexcept -> handle_type
@@ -330,14 +451,13 @@ namespace usb_asio
       private:
         struct CompletionContext
         {
-            executor_type executor;
+            std::optional<asio::any_io_executor> executor;
             [[no_unique_address]] typename traits_type::result_storage_type result_storage = {};
-            std::optional<asio::executor_work_guard<executor_type>>
-                work_guard = std::nullopt;
             std::function<completion_handler_sig> completion_handler = {};
         };
 
         unique_handle_type handle_;
+        executor_type executor_;
         std::unique_ptr<CompletionContext> completion_context_;
 
         static void completion_callback(handle_type const handle) noexcept
@@ -377,7 +497,7 @@ namespace usb_asio
                     ec,
                     result));
 
-            context.work_guard.reset();
+            context.executor.reset();
         }
 
         template <typename CompletionToken>
@@ -387,7 +507,8 @@ namespace usb_asio
                 CompletionToken,
                 completion_handler_sig>{token};
 
-            completion_context_->work_guard.emplace(completion_context_->executor);
+            completion_context_->executor.emplace(asio::prefer(
+                executor_, asio::execution::outstanding_work_t::tracked));
             completion_context_->completion_handler = std::move(completion.completion_handler);
 
             auto ec = error_code{};
@@ -416,61 +537,61 @@ namespace usb_asio
         }
     };
 
-    template <typename Executor = asio::executor>
+    template <typename Executor = asio::any_io_executor>
     using basic_usb_out_control_transfer = basic_usb_transfer<
         usb_transfer_type::control,
         usb_transfer_direction::out>;
     using usb_out_control_transfer = basic_usb_out_control_transfer<>;
 
-    template <typename Executor = asio::executor>
+    template <typename Executor = asio::any_io_executor>
     using basic_usb_in_control_transfer = basic_usb_transfer<
         usb_transfer_type::control,
         usb_transfer_direction::in>;
     using usb_in_control_transfer = basic_usb_in_control_transfer<>;
 
-    template <typename Executor = asio::executor>
+    template <typename Executor = asio::any_io_executor>
     using basic_usb_out_isochronous_transfer = basic_usb_transfer<
         usb_transfer_type::isochronous,
         usb_transfer_direction::out>;
     using usb_out_isochronous_transfer = basic_usb_out_isochronous_transfer<>;
 
-    template <typename Executor = asio::executor>
+    template <typename Executor = asio::any_io_executor>
     using basic_usb_in_isochronous_transfer = basic_usb_transfer<
         usb_transfer_type::isochronous,
         usb_transfer_direction::in>;
     using usb_in_isochronous_transfer = basic_usb_in_isochronous_transfer<>;
 
-    template <typename Executor = asio::executor>
+    template <typename Executor = asio::any_io_executor>
     using basic_usb_out_bulk_transfer = basic_usb_transfer<
         usb_transfer_type::bulk,
         usb_transfer_direction::out>;
     using usb_out_bulk_transfer = basic_usb_out_bulk_transfer<>;
 
-    template <typename Executor = asio::executor>
+    template <typename Executor = asio::any_io_executor>
     using basic_usb_in_bulk_transfer = basic_usb_transfer<
         usb_transfer_type::bulk,
         usb_transfer_direction::in>;
     using usb_in_bulk_transfer = basic_usb_in_bulk_transfer<>;
 
-    template <typename Executor = asio::executor>
+    template <typename Executor = asio::any_io_executor>
     using basic_usb_out_interrupt_transfer = basic_usb_transfer<
         usb_transfer_type::interrupt,
         usb_transfer_direction::out>;
     using usb_out_interrupt_transfer = basic_usb_out_interrupt_transfer<>;
 
-    template <typename Executor = asio::executor>
+    template <typename Executor = asio::any_io_executor>
     using basic_usb_in_interrupt_transfer = basic_usb_transfer<
         usb_transfer_type::interrupt,
         usb_transfer_direction::in>;
     using usb_in_interrupt_transfer = basic_usb_in_interrupt_transfer<>;
 
-    template <typename Executor = asio::executor>
+    template <typename Executor = asio::any_io_executor>
     using basic_usb_out_bulk_stream_transfer = basic_usb_transfer<
         usb_transfer_type::bulk_stream,
         usb_transfer_direction::out>;
     using usb_out_bulk_stream_transfer = basic_usb_out_bulk_stream_transfer<>;
 
-    template <typename Executor = asio::executor>
+    template <typename Executor = asio::any_io_executor>
     using basic_usb_in_bulk_stream_transfer = basic_usb_transfer<
         usb_transfer_type::bulk_stream,
         usb_transfer_direction::in>;

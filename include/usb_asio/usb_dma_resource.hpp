@@ -85,7 +85,7 @@ namespace usb_asio
         void do_deallocate(
             void* const ptr,
             std::size_t const bytes,
-            [[maybe_unused]] std::size_t const alignment) noexcept override
+            std::size_t const alignment) noexcept override
         {
             if (backup_resource_ != nullptr)
             {

@@ -14,7 +14,7 @@
 
 namespace usb_asio
 {
-    template <typename Executor = asio::executor>
+    template <typename Executor = asio::any_io_executor>
     class basic_usb_interface
     {
       public:

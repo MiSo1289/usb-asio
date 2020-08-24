@@ -13,7 +13,7 @@
 
 namespace usb_asio
 {
-    template <typename Executor = boost::asio::executor>
+    template <typename Executor = asio::any_io_executor>
     class basic_usb_device
     {
       public:
@@ -24,12 +24,11 @@ namespace usb_asio
 
         explicit basic_usb_device(executor_type const& executor)
           : executor_{executor}
-          , service_{&boost::asio::use_service<service_type>(executor.context())}
+          , service_{&asio::use_service<service_type>(executor.context())}
         {
         }
 
-        template <typename ExecutionContext>
-        explicit basic_usb_device(ExecutionContext& context)
+        explicit basic_usb_device(asio::io_context& context)
           : basic_usb_device{context.get_executor()}
         {
         }
@@ -40,8 +39,7 @@ namespace usb_asio
             open(info);
         }
 
-        template <typename ExecutionContext>
-        basic_usb_device(ExecutionContext& context, usb_device_info const& info)
+        basic_usb_device(asio::io_context& context, usb_device_info const& info)
           : basic_usb_device{context.get_executor(), info}
         {
         }
@@ -96,7 +94,7 @@ namespace usb_asio
             libusb_try(ec, &::libusb_set_configuration, handle(), configuration);
         }
 
-        template <typename CompletionToken = boost::asio::default_completion_token_t<executor_type>>
+        template <typename CompletionToken = asio::default_completion_token_t<executor_type>>
         auto async_set_configuration(
             std::uint8_t const configuration,
             CompletionToken&& token = {})
@@ -124,7 +122,7 @@ namespace usb_asio
             libusb_try(ec, &::libusb_clear_halt, handle(), endpoint);
         }
 
-        template <typename CompletionToken = boost::asio::default_completion_token_t<executor_type>>
+        template <typename CompletionToken = asio::default_completion_token_t<executor_type>>
         auto async_clear_halt(
             std::uint8_t const endpoint,
             CompletionToken&& token = {})
@@ -150,7 +148,7 @@ namespace usb_asio
             libusb_try(ec, &::libusb_reset_device, handle());
         }
 
-        template <typename CompletionToken = boost::asio::default_completion_token_t<executor_type>>
+        template <typename CompletionToken = asio::default_completion_token_t<executor_type>>
         auto async_reset_device(CompletionToken&& token = {})
         {
             return async_try_blocking_with_ec(
