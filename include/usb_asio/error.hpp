@@ -219,7 +219,9 @@ namespace usb_asio
         asio::post(
             std::forward<BlockingOpExecutor>(blocking_op_executor),
             [completion_handler = std::move(completion.completion_handler),
-             executor = std::forward<Executor>(executor),
+                executor = asio::prefer(
+                    std::forward<Executor>(executor),
+                    asio::execution::outstanding_work_t::tracked),
              blocking_fn = std::forward<BlockingFn>(blocking_fn)]() mutable {
                 auto ec = error_code{};
                 std::invoke(std::move(blocking_fn), ec);
