@@ -1,7 +1,8 @@
 ## usb-asio
 A libusb wrapper for Asio. Header-only, supports both standalone and boost versions of Asio. Requires a C++20 compiler (only tested on gcc-10). This is an early version, some features might not work as expected.
 
- ### Using with standalone asio
+ ### Using with standalone Asio
+ By default, boost version of Asio is used. To use standalone asio:
  - When using as a conan package, add `-o usb_asio:asio=standalone`.
  - When using as a cmake subproject, add `-DUSB_ASIO_USE_STANDALONE_ASIO=ON`
  - Otherwise, define `USB_ASIO_USE_STANDALONE_ASIO`.
@@ -13,7 +14,6 @@ A libusb wrapper for Asio. Header-only, supports both standalone and boost versi
 
 auto main() -> int {
     auto ctx = asio::io_context{};
-    auto const worker = std::jthread{[&]() { ctx.run(); }};
     
     auto future = asio::co_spawn(
         ctx.get_executor(),
@@ -66,6 +66,8 @@ auto main() -> int {
         },
         asio::use_future);
     
+    ctx.run();
+
     return future.get();
 }
 ```
