@@ -46,9 +46,10 @@ class UsbAsio(ConanFile):
         self.copy("*.hpp", dst="include", src="include")
 
     def package_id(self):
-        del self.options.examples
+        del self.info.options.examples
 
         self.info.header_only()
 
     def package_info(self):
-        self.cpp_info.defines = ["USB_ASIO_USE_STANDALONE_ASIO"]
+        if self.options.asio == "standalone":
+            self.cpp_info.defines = ["USB_ASIO_USE_STANDALONE_ASIO"]
