@@ -1,5 +1,6 @@
 #pragma once
 
+#include <concepts>
 #include <compare>
 #include <cstdint>
 #include <span>
@@ -28,7 +29,8 @@ namespace usb_asio
         {
         }
 
-        explicit basic_usb_device(asio::io_context& context)
+        template <std::derived_from<asio::execution_context> ExecutionContext>
+        explicit basic_usb_device(ExecutionContext& context)
           : basic_usb_device{context.get_executor()}
         {
         }
@@ -39,7 +41,8 @@ namespace usb_asio
             open(info);
         }
 
-        basic_usb_device(asio::io_context& context, usb_device_info const& info)
+        template <std::derived_from<asio::execution_context> ExecutionContext>
+        basic_usb_device(ExecutionContext& context, usb_device_info const& info)
           : basic_usb_device{context.get_executor(), info}
         {
         }

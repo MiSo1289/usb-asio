@@ -44,7 +44,7 @@ auto main() -> int {
                 auto const endpoint_number = std::uint8_t{3};
                 auto const timeout = std::chrono::seconds{1};
                 auto transfer = usb_asio::usb_in_bulk_transfer{
-                    device, endpoint_number, timeout};
+                    dev, endpoint_number, timeout};
             
                 auto buff = std::array<char, 512>{};
                 // Read from the bulk endpoint 
