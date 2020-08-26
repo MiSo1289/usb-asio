@@ -24,7 +24,7 @@ namespace usb_asio
 
         explicit basic_usb_interface(executor_type const& executor)
           : executor_{executor}
-          , service_{&asio::use_service<service_type>(executor.context())}
+          , service_{&asio::use_service<service_type>(asio::query(executor, asio::execution::context))}
         {
         }
 
@@ -187,7 +187,7 @@ namespace usb_asio
             bool const reattach_kernel_driver,
             CompletionToken&& token = {})
         {
-            async_try_blocking_with_ec(
+            return async_try_blocking_with_ec(
                 executor_,
                 service_->blocking_op_executor(),
                 std::forward<CompletionToken>(token),
@@ -220,7 +220,7 @@ namespace usb_asio
             std::uint8_t const alt_setting,
             CompletionToken&& token = {})
         {
-            async_try_blocking_with_ec(
+            return async_try_blocking_with_ec(
                 executor_,
                 service_->blocking_op_executor(),
                 std::forward<CompletionToken>(token),
@@ -302,4 +302,5 @@ namespace usb_asio
         service_type* service_;
     };
 
+    using usb_interface = basic_usb_interface<>;
 }  // namespace usb_asio

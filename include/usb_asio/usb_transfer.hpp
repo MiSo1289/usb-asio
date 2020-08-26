@@ -111,7 +111,7 @@ namespace usb_asio
           // clang-format on
           : handle_{::libusb_alloc_transfer(0)}
           , executor_{executor}
-          , completion_context_{std::make_unique<CompletionContext>()}
+          , completion_context_{std::make_unique<completion_context>()}
         {
             check_is_constructed();
 
@@ -149,7 +149,7 @@ namespace usb_asio
             && std::unsigned_integral<std::ranges::range_value_t<PacketSizeRange>>
           // clang-format on
           : handle_{::libusb_alloc_transfer(static_cast<int>(std::ranges::size(packet_sizes)))},
-            executor_{executor}, completion_context_{std::make_unique<CompletionContext>()}
+            executor_{executor}, completion_context_{std::make_unique<completion_context>()}
         {
             check_is_constructed();
 
@@ -253,7 +253,7 @@ namespace usb_asio
           // clang-format on
           : handle_{::libusb_alloc_transfer(0)}
           , executor_{executor}
-          , completion_context_{std::make_unique<CompletionContext>()}
+          , completion_context_{std::make_unique<completion_context>()}
         {
             check_is_constructed();
 
@@ -296,7 +296,7 @@ namespace usb_asio
           // clang-format on
           : handle_{::libusb_alloc_transfer(0)}
           , executor_{executor}
-          , completion_context_{std::make_unique<CompletionContext>()}
+          , completion_context_{std::make_unique<completion_context>()}
         {
             check_is_constructed();
 
@@ -340,7 +340,7 @@ namespace usb_asio
           // clang-format on
           : handle_{::libusb_alloc_transfer(0)}
           , executor_{executor}
-          , completion_context_{std::make_unique<CompletionContext>()}
+          , completion_context_{std::make_unique<completion_context>()}
         {
             check_is_constructed();
 
@@ -449,23 +449,64 @@ namespace usb_asio
         }
 
       private:
-        struct CompletionContext
+        class completion_handler
+        {
+          public:
+            completion_handler() = default;
+
+            template <std::invocable<error_code, result_type> T>
+            completion_handler(T&& handler)
+                : impl_{std::make_unique<handler_impl<T>>(std::move(handler))} {}
+
+            void operator()(error_code const ec, result_type result)
+            {
+                (*impl_)(ec, std::move(result));
+            }
+
+          private:
+            struct erased_handler
+            {
+                virtual ~erased_handler() noexcept = default;
+
+                virtual void operator()(error_code ec, result_type&& result) = 0;
+            };
+
+            template <std::invocable<error_code, result_type> T>
+            struct handler_impl final : erased_handler
+            {
+                T handler;
+
+                explicit handler_impl(T&& handler)
+                    : handler{std::move(handler)} {}
+
+                void operator()(error_code ec, result_type&& result) override
+                {
+                    std::invoke(std::move(handler), ec, std::move(result));
+                }
+            };
+
+            std::unique_ptr<erased_handler> impl_;
+        };
+        
+
+        
+        struct completion_context
         {
             std::optional<asio::any_io_executor> executor;
             [[no_unique_address]] typename traits_type::result_storage_type result_storage = {};
-            std::function<completion_handler_sig> completion_handler = {};
+            completion_handler handler = {};
         };
 
         unique_handle_type handle_;
         executor_type executor_;
-        std::unique_ptr<CompletionContext> completion_context_;
+        std::unique_ptr<completion_context> completion_context_;
 
         static void completion_callback(handle_type const handle) noexcept
         {
             auto const ec = error_code{
                 static_cast<usb_transfer_errc>(handle->status),
             };
-            auto& context = *static_cast<CompletionContext*>(handle->user_data);
+            auto& context = *static_cast<completion_context*>(handle->user_data);
 
             auto const result = [&]() {
                 if constexpr (transfer_type == usb_transfer_type::isochronous)
@@ -491,9 +532,9 @@ namespace usb_asio
             }();
 
             asio::post(
-                context.executor,
+                *context.executor,
                 std::bind_front(
-                    std::move(context.completion_handler),
+                    std::move(context.handler),
                     ec,
                     result));
 
@@ -503,29 +544,31 @@ namespace usb_asio
         template <typename CompletionToken>
         auto async_submit_impl(CompletionToken&& token)
         {
-            auto completion = asio::async_completion<
-                CompletionToken,
-                completion_handler_sig>{token};
+            return asio::async_initiate<CompletionToken, completion_handler_sig>(
+                [](auto completion_handler, auto const handle, auto const context, auto const executor) {
+                    context->executor.emplace(asio::prefer(
+                        executor, asio::execution::outstanding_work_t::tracked));
+                    context->handler = std::move(completion_handler);
 
-            completion_context_->executor.emplace(asio::prefer(
-                executor_, asio::execution::outstanding_work_t::tracked));
-            completion_context_->completion_handler = std::move(completion.completion_handler);
+                    auto ec = error_code{};
+                    libusb_try(ec, &::libusb_submit_transfer, handle);
 
-            auto ec = error_code{};
-            libusb_try(ec, &::libusb_submit_transfer, handle());
-
-            if (ec)
-            {
-                asio::post(
-                    completion_context_->executor,
-                    std::bind_front(
-                        std::move(completion_context_->completion_handler),
-                        ec,
-                        result_type{}));
-                completion_context_->work_guard.reset();
-            }
-
-            return completion.result.get();
+                    if (ec)
+                    {
+                        // Error in submission
+                        asio::post(
+                            *context->executor,
+                            std::bind_front(
+                                std::move(context->handler),
+                                ec,
+                                result_type{}));
+                        context->executor.reset();
+                    }
+                },
+                std::forward<CompletionToken>(token),
+                handle(),
+                completion_context_.get(),
+                executor_);
         }
 
         void check_is_constructed() const

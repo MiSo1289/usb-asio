@@ -25,7 +25,7 @@ namespace usb_asio
 
         explicit basic_usb_device(executor_type const& executor)
           : executor_{executor}
-          , service_{&asio::use_service<service_type>(executor.context())}
+          , service_{&asio::use_service<service_type>(asio::query(executor, asio::execution::context))}
         {
         }
 

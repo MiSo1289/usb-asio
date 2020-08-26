@@ -16,7 +16,8 @@ namespace usb_asio
       public:
         using handle_type = ::libusb_context*;
         using unique_handle_type = libusb_ptr<::libusb_context, &::libusb_exit>;
-        using key_type = usb_service;
+
+        static inline auto id = asio::execution_context::id{};
 
         explicit usb_service(asio::execution_context& context)
           : asio::execution_context::service{context}

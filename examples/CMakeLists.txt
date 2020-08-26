@@ -1,15 +1,28 @@
-add_executable(example_enumeration)
+add_library(example_base INTERFACE)
 target_link_libraries(
-  example_enumeration
+  example_base
 
-  PRIVATE
+  INTERFACE
   CONAN_PKG::fmt
   usb_asio::usb_asio
 )
-target_sources(example_enumeration PRIVATE example_enumeration.cpp)
+target_compile_options(
+  example_base
+
+  INTERFACE
+  -fcoroutines
+)
 
 if (USB_ASIO_USE_STANDALONE_ASIO)
-  target_compile_definitions(example_enumeration PRIVATE "ASIO_NO_TS_EXECUTORS")
+  target_compile_definitions(example_base INTERFACE "ASIO_NO_TS_EXECUTORS")
 else ()
-  target_compile_definitions(example_enumeration PRIVATE "BOOST_ASIO_NO_TS_EXECUTORS")
+  target_compile_definitions(example_base INTERFACE "BOOST_ASIO_NO_TS_EXECUTORS")
 endif ()
+
+add_executable(example_enumeration)
+target_link_libraries(example_enumeration PRIVATE example_base)
+target_sources(example_enumeration PRIVATE example_enumeration.cpp)
+
+add_executable(example_from_readme)
+target_link_libraries(example_from_readme PRIVATE example_base)
+target_sources(example_from_readme PRIVATE example_from_readme.cpp)
