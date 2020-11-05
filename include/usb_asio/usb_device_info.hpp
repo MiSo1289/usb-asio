@@ -44,12 +44,13 @@ namespace usb_asio
             return ::libusb_get_port_number(handle());
         }
 
-        [[nodiscard]] auto port_numbers() const -> std::vector<std::uint8_t>
+        template <typename Alloc = std::allocator<std::uint8_t>>
+        [[nodiscard]] auto port_numbers(Alloc const& alloc = {}) const -> std::vector<std::uint8_t, Alloc>
         {
             // As per USB 3.0 specs and libusb documentation.
-            constexpr auto max_depth = 7;
+            constexpr auto max_depth = std::size_t{7};
 
-            auto ports = std::vector<std::uint8_t>(max_depth);
+            auto ports = std::vector<std::uint8_t, Alloc>(max_depth, alloc);
             auto ec = error_code{};
 
             while (true)
@@ -71,7 +72,7 @@ namespace usb_asio
                     }
 
                     // This definitely should not happen
-                    throw std::system_error{ec};
+                    throw system_error{ec};
                 }
 
                 ports.resize(num_ports);

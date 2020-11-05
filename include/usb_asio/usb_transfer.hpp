@@ -22,6 +22,7 @@ namespace usb_asio
       public:
         explicit usb_control_transfer_buffer(std::size_t const size)
           : usb_control_transfer_buffer{size, std::pmr::get_default_resource()} { }
+
         usb_control_transfer_buffer(
             std::size_t const size,
             std::pmr::memory_resource* const mem_resource)
@@ -156,7 +157,7 @@ namespace usb_asio
             auto const num_packets = std::ranges::size(packet_sizes);
             completion_context_->result_storage.resize(num_packets);
 
-            auto packet = 0;
+            auto packet = std::size_t{0};
             for (auto const packet_size : packet_sizes)
             {
                 handle()->iso_packet_desc[packet++].length = static_cast<unsigned>(packet_size);
@@ -449,18 +450,37 @@ namespace usb_asio
         }
 
       private:
-        class completion_handler
+        class completion_handler_t
         {
           public:
-            completion_handler() = default;
+            completion_handler_t() = default;
 
-            template <std::invocable<error_code, result_type> T>
-            completion_handler(T&& handler)
-                : impl_{std::make_unique<handler_impl<T>>(std::move(handler))} {}
+            template <
+                std::invocable<error_code, result_type> T>
+            completion_handler_t(Executor const& executor, T&& handler)
+            {
+                auto const trackedEx = asio::prefer(executor, asio::execution::outstanding_work.tracked);
+                auto const trackedCompletionEx = asio::prefer(
+                    asio::get_associated_executor(handler, executor),
+                    asio::execution::outstanding_work.tracked);
+
+                impl_ = std::make_unique<handler_impl<
+                    T,
+                    std::decay_t<decltype(trackedEx)>,
+                    std::decay_t<decltype(trackedCompletionEx)>>>(
+                    trackedEx,
+                    trackedCompletionEx,
+                    std::move(handler));
+            }
 
             void operator()(error_code const ec, result_type result)
             {
                 (*impl_)(ec, std::move(result));
+            }
+
+            void reset() noexcept
+            {
+                impl_.reset();
             }
 
           private:
@@ -471,30 +491,38 @@ namespace usb_asio
                 virtual void operator()(error_code ec, result_type&& result) = 0;
             };
 
-            template <std::invocable<error_code, result_type> T>
+            template <std::invocable<error_code, result_type> T,
+                      typename TrackedExecutor,
+                      typename TrackedCompletionExecutor>
             struct handler_impl final : erased_handler
             {
+                TrackedExecutor executor;
+                TrackedCompletionExecutor completion_executor;
                 T handler;
 
-                explicit handler_impl(T&& handler)
-                    : handler{std::move(handler)} {}
+                handler_impl(
+                    TrackedExecutor const& executor,
+                    TrackedCompletionExecutor const& completion_executor,
+                    T&& handler)
+                  : executor{executor}
+                  , completion_executor{completion_executor}
+                  , handler{std::move(handler)} { }
 
-                void operator()(error_code ec, result_type&& result) override
+                void operator()(error_code const ec, result_type&& result) override
                 {
-                    std::invoke(std::move(handler), ec, std::move(result));
+                    asio::post(
+                        completion_executor,
+                        std::bind_front(std::move(handler), ec, std::move(result)));
                 }
             };
 
             std::unique_ptr<erased_handler> impl_;
         };
-        
 
-        
         struct completion_context
         {
-            std::optional<asio::any_io_executor> executor;
             [[no_unique_address]] typename traits_type::result_storage_type result_storage = {};
-            completion_handler handler = {};
+            completion_handler_t handler = {};
         };
 
         unique_handle_type handle_;
@@ -531,24 +559,16 @@ namespace usb_asio
                 }
             }();
 
-            asio::post(
-                *context.executor,
-                std::bind_front(
-                    std::move(context.handler),
-                    ec,
-                    result));
-
-            context.executor.reset();
+            context.handler(ec, result);
+            context.handler.reset();
         }
 
         template <typename CompletionToken>
         auto async_submit_impl(CompletionToken&& token)
         {
             return asio::async_initiate<CompletionToken, completion_handler_sig>(
-                [](auto completion_handler, auto const handle, auto const context, auto const executor) {
-                    context->executor.emplace(asio::prefer(
-                        executor, asio::execution::outstanding_work_t::tracked));
-                    context->handler = std::move(completion_handler);
+                [](auto completion_handler, auto const handle, auto* const context, auto const& executor) {
+                    context->handler = completion_handler_t{executor, std::move(completion_handler)};
 
                     auto ec = error_code{};
                     libusb_try(ec, &::libusb_submit_transfer, handle);
@@ -556,13 +576,8 @@ namespace usb_asio
                     if (ec)
                     {
                         // Error in submission
-                        asio::post(
-                            *context->executor,
-                            std::bind_front(
-                                std::move(context->handler),
-                                ec,
-                                result_type{}));
-                        context->executor.reset();
+                        context->handler(ec, result_type{});
+                        context->handler.reset();
                     }
                 },
                 std::forward<CompletionToken>(token),

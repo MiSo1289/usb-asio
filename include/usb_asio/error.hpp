@@ -166,54 +166,40 @@ namespace usb_asio
         typename CompletionToken,
         typename BlockingFn>
     auto async_try_blocking_with_ec(
-        Executor&& executor,
-        BlockingOpExecutor&& blocking_op_executor,
+        Executor const& executor,
+        BlockingOpExecutor const& blocking_op_executor,
         CompletionToken&& token,
         BlockingFn&& blocking_fn)
-    requires std::invocable<BlockingFn&&, error_code&>
+    requires std::invocable<std::decay_t<BlockingFn>&&, error_code&>
     // clang-format on
     {
-        return asio::async_initiate<CompletionToken, void(error_code, std::invoke_result_t<BlockingFn&&, error_code&>)>(
-            [](auto completion_handler, auto executor, auto blocking_op_executor, auto blocking_fn) mutable {
+        return asio::async_initiate<CompletionToken, void(error_code, std::invoke_result_t<std::decay_t<BlockingFn>&&, error_code&>)>(
+            [](auto completion_handler, auto const& executor, auto const& blocking_op_executor, auto blocking_fn) mutable {
+                auto const tracked_executor = asio::prefer(
+                    executor,
+                    asio::execution::outstanding_work.tracked);
+                auto const completion_executor = asio::prefer(
+                    asio::get_associated_executor(completion_handler, executor),
+                    asio::execution::outstanding_work.tracked);
+
                 asio::post(
-                    std::forward<BlockingOpExecutor>(blocking_op_executor),
-                    [completion_handler = std::move(completion_handler),
-                        executor = asio::prefer(
-                            std::forward<Executor>(executor),
-                            asio::execution::outstanding_work_t::tracked),
-                        blocking_fn = std::forward<BlockingFn>(blocking_fn)]() mutable {
+                    blocking_op_executor,
+                    [tracked_executor,
+                     completion_executor,
+                     completion_handler = std::move(completion_handler),
+                     blocking_fn = std::move(blocking_fn)]() mutable {
                         auto ec = error_code{};
                         auto result = std::invoke(std::move(blocking_fn), ec);
 
                         asio::post(
-                            std::move(executor),
+                            std::move(completion_executor),
                             std::bind_front(std::move(completion_handler), ec, std::move(result)));
                     });
             },
             std::forward<CompletionToken>(token),
-            std::forward<Executor>(executor),
-            std::forward<BlockingOpExecutor>(blocking_op_executor),
+            executor,
+            blocking_op_executor,
             std::forward<BlockingFn>(blocking_fn));
-//        auto completion = asio::async_completion<
-//            CompletionToken,
-//            void(error_code, std::invoke_result_t<BlockingFn&&, error_code&>)>{token};
-//
-//        asio::post(
-//            std::forward<BlockingOpExecutor>(blocking_op_executor),
-//            [completion_handler = std::move(completion.completion_handler),
-//             executor = asio::prefer(
-//                 std::forward<Executor>(executor),
-//                 asio::execution::outstanding_work_t::tracked),
-//             blocking_fn = std::forward<BlockingFn>(blocking_fn)]() mutable {
-//                auto ec = error_code{};
-//                auto result = std::invoke(std::move(blocking_fn), ec);
-//
-//                asio::post(
-//                    std::move(executor),
-//                    std::bind_front(std::move(completion_handler), ec, std::move(result)));
-//            });
-//
-//        return completion.result.get();
     }
 
     // clang-format off
@@ -223,55 +209,41 @@ namespace usb_asio
         typename CompletionToken,
         typename BlockingFn>
     auto async_try_blocking_with_ec(
-        Executor&& executor,
-        BlockingOpExecutor&& blocking_op_executor,
+        Executor const& executor,
+        BlockingOpExecutor const& blocking_op_executor,
         CompletionToken&& token,
         BlockingFn&& blocking_fn)
-    requires std::invocable<BlockingFn&&, error_code&>
-        && std::is_void_v<std::invoke_result_t<BlockingFn&&, error_code&>>
+    requires std::invocable<std::decay_t<BlockingFn>&&, error_code&>
+        && std::is_void_v<std::invoke_result_t<std::decay_t<BlockingFn>&&, error_code&>>
     // clang-format on
     {
         return asio::async_initiate<CompletionToken, void(error_code)>(
-            [](auto completion_handler, auto executor, auto blocking_op_executor, auto blocking_fn) mutable {
+            [](auto completion_handler, auto const& executor, auto const& blocking_op_executor, auto blocking_fn) mutable {
+                auto const tracked_executor = asio::prefer(
+                    executor,
+                    asio::execution::outstanding_work.tracked);
+                auto const completion_executor = asio::prefer(
+                    asio::get_associated_executor(completion_handler, executor),
+                    asio::execution::outstanding_work.tracked);
+
                 asio::post(
-                    std::forward<BlockingOpExecutor>(blocking_op_executor),
-                    [completion_handler = std::move(completion_handler),
-                        executor = asio::prefer(
-                            std::forward<Executor>(executor),
-                            asio::execution::outstanding_work_t::tracked),
-                        blocking_fn = std::forward<BlockingFn>(blocking_fn)]() mutable {
+                    blocking_op_executor,
+                    [executor,
+                     completion_executor,
+                     completion_handler = std::move(completion_handler),
+                     blocking_fn = std::move(blocking_fn)]() mutable {
                         auto ec = error_code{};
                         std::invoke(std::move(blocking_fn), ec);
 
                         asio::post(
-                            std::move(executor),
+                            std::move(completion_executor),
                             std::bind_front(std::move(completion_handler), ec));
                     });
             },
             std::forward<CompletionToken>(token),
-            std::forward<Executor>(executor),
-            std::forward<BlockingOpExecutor>(blocking_op_executor),
+            executor,
+            blocking_op_executor,
             std::forward<BlockingFn>(blocking_fn));
-//        auto completion = asio::async_completion<
-//            CompletionToken,
-//            void(error_code)>{token};
-//
-//        asio::post(
-//            std::forward<BlockingOpExecutor>(blocking_op_executor),
-//            [completion_handler = std::move(completion.completion_handler),
-//             executor = asio::prefer(
-//                 std::forward<Executor>(executor),
-//                 asio::execution::outstanding_work_t::tracked),
-//             blocking_fn = std::forward<BlockingFn>(blocking_fn)]() mutable {
-//                auto ec = error_code{};
-//                std::invoke(std::move(blocking_fn), ec);
-//
-//                asio::post(
-//                    std::move(executor),
-//                    std::bind_front(std::move(completion_handler), ec));
-//            });
-//
-//        return completion.result.get();
     }
 
     // clang-format off

@@ -20,6 +20,7 @@
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/post.hpp>
 #include <boost/system/error_code.hpp>
+#include <boost/system/system_error.hpp>
 
 #endif
 
@@ -30,10 +31,12 @@ namespace usb_asio
 
     using error_code = std::error_code;
     using error_category = std::error_category;
+    using system_error = std::system_error;
 #else
     namespace asio = boost::asio;
 
     using error_code = boost::system::error_code;
     using error_category = boost::system::error_category;
+    using system_error = boost::system::system_error;
 #endif
 }  // namespace usb_asio
