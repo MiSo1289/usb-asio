@@ -218,7 +218,7 @@ namespace usb_asio
 
         [[nodiscard]] auto is_open() const noexcept -> bool
         {
-            return handle_ == nullptr;
+            return handle_ != nullptr;
         }
 
         template <std::convertible_to<executor_type> OtherExecutor>
