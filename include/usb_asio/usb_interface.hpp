@@ -252,7 +252,7 @@ namespace usb_asio
 
         [[nodiscard]] auto is_claimed() const noexcept -> bool
         {
-            return device_handle_ == nullptr;
+            return device_handle_ != nullptr;
         }
 
         auto operator=(basic_usb_interface const&) = delete;
