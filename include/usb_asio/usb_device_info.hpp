@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <vector>
+#include <optional>
 
 #include <libusb.h>
 #include "usb_asio/error.hpp"
