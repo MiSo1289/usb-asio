@@ -220,7 +220,7 @@ namespace usb_asio
         }
 
         // clang-format off
-        template <std::convertible_to<executor_type> OtherExecutor, typename PacketSizeRange>
+        template <std::convertible_to<executor_type> OtherExecutor>
         basic_usb_transfer(
             basic_usb_device<OtherExecutor>& device,
             std::uint8_t const endpoint,
@@ -228,9 +228,6 @@ namespace usb_asio
             std::size_t const packet_size,
             std::chrono::milliseconds const timeout = usb_no_timeout)
         requires (transfer_type == usb_transfer_type::isochronous)
-                 && std::ranges::input_range<PacketSizeRange>
-                 && std::ranges::sized_range<PacketSizeRange>
-                 && std::unsigned_integral<std::ranges::range_value_t<PacketSizeRange>>
           // clang-format on
           : basic_usb_transfer{
                 device.get_executor(),
